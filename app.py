@@ -1,26 +1,24 @@
 import logging
 import os
 import sys
-import threading
-from flask import Flask
+from flask import Flask, request
 from telegram import Update, ReplyKeyboardMarkup, ReplyKeyboardRemove, InlineKeyboardButton, InlineKeyboardMarkup
 from telegram.ext import Application, CommandHandler, MessageHandler, filters, ContextTypes
 
-# Проверка токена
+# Токен из переменной окружения
 TOKEN = os.environ.get('TELEGRAM_TOKEN')
 if not TOKEN:
-    logging.error("❌ TELEGRAM_TOKEN not set in environment variables")
+    logging.error("❌ TELEGRAM_TOKEN not set")
     sys.exit(1)
 
+# URL вашего бота на Render (замените, если нужно)
+RENDER_URL = os.environ.get('RENDER_URL', 'https://kutuzov-bot.onrender.com')
 GAME_URL = 'https://kutuzovgames.gusevandrey726.workers.dev'
 
-logging.basicConfig(
-    format='%(asctime)s - %(name)s - %(levelname)s - %(message)s',
-    level=logging.INFO
-)
+logging.basicConfig(format='%(asctime)s - %(name)s - %(levelname)s - %(message)s', level=logging.INFO)
 logger = logging.getLogger(__name__)
 
-# Проверка наличия файлов изображений
+# Проверка наличия изображений
 INTRO_PHOTO = 'KutuzovIntro.jpg'
 POD_PHOTO = 'KutuzovPODIntro.jpg'
 if not os.path.isfile(INTRO_PHOTO):
@@ -28,6 +26,7 @@ if not os.path.isfile(INTRO_PHOTO):
 if not os.path.isfile(POD_PHOTO):
     logger.warning(f"⚠️ File {POD_PHOTO} not found. Will send text only.")
 
+# --- Обработчики команд ---
 async def start(update: Update, context: ContextTypes.DEFAULT_TYPE) -> None:
     try:
         if os.path.isfile(INTRO_PHOTO):
@@ -53,7 +52,7 @@ async def start(update: Update, context: ContextTypes.DEFAULT_TYPE) -> None:
     except Exception as e:
         logger.error(f"Error in start: {e}")
         await update.message.reply_text("Произошла ошибка. Попробуйте позже.")
-
+    
     keyboard = [['🎮 ИГРАТЬ']]
     reply_markup = ReplyKeyboardMarkup(keyboard, resize_keyboard=True, one_time_keyboard=True)
     await update.message.reply_text(reply_markup=reply_markup)
@@ -77,18 +76,24 @@ async def handle_message(update: Update, context: ContextTypes.DEFAULT_TYPE) -> 
     else:
         await update.message.reply_text('Пожалуйста, используйте кнопку "🎮 ИГРАТЬ".')
 
-def run_bot():
-    try:
-        application = Application.builder().token(TOKEN).build()
-        application.add_handler(CommandHandler("start", start))
-        application.add_handler(MessageHandler(filters.TEXT & ~filters.COMMAND, handle_message))
-        logger.info("🤖 Бот запущен и начинает polling...")
-        application.run_polling()
-    except Exception as e:
-        logger.error(f"Bot polling error: {e}")
-        sys.exit(1)
-
+# --- Flask приложение для вебхука ---
 app = Flask(__name__)
+
+# Создаём экземпляр Application (один раз)
+application = Application.builder().token(TOKEN).build()
+application.add_handler(CommandHandler("start", start))
+application.add_handler(MessageHandler(filters.TEXT & ~filters.COMMAND, handle_message))
+
+@app.route(f'/{TOKEN}', methods=['POST'])
+def webhook():
+    """Принимает обновления от Telegram."""
+    try:
+        update = Update.de_json(request.get_json(force=True), application.bot)
+        application.update_queue.put(update)
+        return 'ok'
+    except Exception as e:
+        logger.error(f"Webhook error: {e}")
+        return 'error', 500
 
 @app.route('/')
 def index():
@@ -99,7 +104,11 @@ def health():
     return "OK", 200
 
 if __name__ == '__main__':
-    bot_thread = threading.Thread(target=run_bot)
-    bot_thread.start()
-    logger.info("🚀 Запуск веб-сервера...")
-    app.run(host='0.0.0.0', port=int(os.environ.get('PORT', 5000)))
+    # Устанавливаем вебхук при старте
+    webhook_url = f"{RENDER_URL}/{TOKEN}"
+    application.bot.set_webhook(url=webhook_url)
+    logger.info(f"Webhook set to {webhook_url}")
+    
+    # Запускаем Flask (без polling)
+    port = int(os.environ.get('PORT', 5000))
+    app.run(host='0.0.0.0', port=port)
