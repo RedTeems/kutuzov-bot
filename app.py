@@ -1,3 +1,5 @@
+import telebot # или aiogram, смотря что ты используешь
+from keep_alive import keep_alive # Импортируем наш сервер
 import logging
 import os
 import sys
@@ -108,7 +110,8 @@ if __name__ == '__main__':
     webhook_url = f"{RENDER_URL}/{TOKEN}"
     application.bot.set_webhook(url=webhook_url)
     logger.info(f"Webhook set to {webhook_url}")
-    
-    # Запускаем Flask (без polling)
-    port = int(os.environ.get('PORT', 5000))
-    app.run(host='0.0.0.0', port=port)
+
+if __name__ == '__main__':
+    keep_alive() # Запускаем фоновый веб-сервер
+    bot.polling(none_stop=True) # Запускаем самого бота
+
