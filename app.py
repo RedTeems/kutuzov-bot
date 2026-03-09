@@ -1,7 +1,8 @@
 import logging
 import os
 import sys
-from flask import Flask, request
+from keep_alive import keep_alive # Импортируем наш сервер для пинга
+
 from telegram import Update, ReplyKeyboardMarkup, ReplyKeyboardRemove, InlineKeyboardButton, InlineKeyboardMarkup
 from telegram.ext import Application, CommandHandler, MessageHandler, filters, ContextTypes
 
@@ -11,8 +12,6 @@ if not TOKEN:
     logging.error("❌ TELEGRAM_TOKEN not set")
     sys.exit(1)
 
-# URL вашего бота на Render (замените, если нужно)
-RENDER_URL = os.environ.get('RENDER_URL', 'https://kutuzov-bot.onrender.com')
 GAME_URL = 'https://kutuzovgames.gusevandrey726.workers.dev'
 
 logging.basicConfig(format='%(asctime)s - %(name)s - %(levelname)s - %(message)s', level=logging.INFO)
@@ -76,38 +75,17 @@ async def handle_message(update: Update, context: ContextTypes.DEFAULT_TYPE) -> 
     else:
         await update.message.reply_text('Пожалуйста, используйте кнопку "🎮 ИГРАТЬ".')
 
-# --- Flask приложение для вебхука ---
-app = Flask(__name__)
-
-# Создаём экземпляр Application (один раз)
-application = Application.builder().token(TOKEN).build()
-application.add_handler(CommandHandler("start", start))
-application.add_handler(MessageHandler(filters.TEXT & ~filters.COMMAND, handle_message))
-
-@app.route(f'/{TOKEN}', methods=['POST'])
-def webhook():
-    """Принимает обновления от Telegram."""
-    try:
-        update = Update.de_json(request.get_json(force=True), application.bot)
-        application.update_queue.put(update)
-        return 'ok'
-    except Exception as e:
-        logger.error(f"Webhook error: {e}")
-        return 'error', 500
-
-@app.route('/')
-def index():
-    return "✅ Telegram Bot is running!"
-
-@app.route('/health')
-def health():
-    return "OK", 200
-
+# --- ЗАПУСК БОТА И СЕРВЕРА ---
 if __name__ == '__main__':
-    # Устанавливаем вебхук при старте
-    webhook_url = f"{RENDER_URL}/{TOKEN}"
-    application.bot.set_webhook(url=webhook_url)
-    logger.info(f"Webhook set to {webhook_url}")
+    # 1. Запускаем фоновый веб-сервер для Replit
+    keep_alive() 
+    logger.info("Background web server started!")
 
+    # 2. Создаём и настраиваем бота
+    application = Application.builder().token(TOKEN).build()
+    application.add_handler(CommandHandler("start", start))
+    application.add_handler(MessageHandler(filters.TEXT & ~filters.COMMAND, handle_message))
 
-
+    # 3. Запускаем бота в режиме постоянного опроса (polling)
+    logger.info("Starting Kutuzov bot...")
+    application.run_polling(allowed_updates=Update.ALL_TYPES)
