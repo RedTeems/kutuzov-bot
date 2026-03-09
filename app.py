@@ -1,5 +1,3 @@
-import telebot # или aiogram, смотря что ты используешь
-from keep_alive import keep_alive # Импортируем наш сервер
 import logging
 import os
 import sys
@@ -111,7 +109,5 @@ if __name__ == '__main__':
     application.bot.set_webhook(url=webhook_url)
     logger.info(f"Webhook set to {webhook_url}")
 
-if __name__ == '__main__':
-    keep_alive() # Запускаем фоновый веб-сервер
-    bot.polling(none_stop=True) # Запускаем самого бота
+
 
